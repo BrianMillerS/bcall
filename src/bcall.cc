@@ -267,9 +267,13 @@ void parse_readcount_file(string sample, string gzfile, function<void(string, st
     cerr << "Opening " << gzfile << endl;
     std::string line;
     int line_count = 0;
+
+    // Skip header
+    std::getline(in, line);
+
     while(std::getline(in, line)){
         if(line.substr(0, 3) == "chr") {
-            continue;
+            line = line.substr(3);
         }
         func(sample, line, fixed_sites);
         line_count += 1;
