@@ -216,8 +216,8 @@ void apply_model_readcount_line(string sample, string line, bool fixed_sites = f
         //This should help with pulling out from tabix
         string region = chr + ":" + common::num_to_str(pos);
         if (alt_count >= 2) { //only look at sites with 2 or more variant supporting reads
-            //(1 - pbinom(8, 10, 0.5))   == binom.test(9, 10, 0.5, alternative="greater")
-            double p_value = 1 - pbinom(alt_count, ref_count + alt_count, prior_p, true, false);
+            // Test if alt coverage is higher than expected given background error rate
+            double p_value = 1 - pbinom(alt_count - 1, ref_count + alt_count, prior_p, true, false);
             pvalues.push_back(p_value);
             if (p_value <= 0.05) { //Only store lines <= 0.05, these will be further filtered out while printing
                 line = line + "\t" +
