@@ -303,8 +303,7 @@ void apply_model() {
         parse_readcount_file(kv.first, kv.second, apply_model_readcount_line);
         cerr << "The number of tests performed for this sample is: " << pvalues.size() << endl;
         cerr << "Applying the BH-procedure to control FDR." << endl;
-        double pvalue_cutoff = 0.05/(float)9597; //Bonferroni
-        //double pvalue_cutoff = bh_fdr(pvalues, 0.05); //FDR
+        double pvalue_cutoff = bh_fdr(pvalues, 0.05); //FDR
         cerr << "The p-value cutoff is:" << pvalue_cutoff << endl;
         cerr << "The number of sites not in the region of interest is " << not_in_map;
         print_header();
