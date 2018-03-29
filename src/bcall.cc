@@ -40,16 +40,26 @@ using namespace std;
 
 //Map from chromosome to integer
 std::map<string, int> chr_to_int = {
+    // Ensembl chromosome naming convention (i.e., 1, ..., MT, X, Y)
     {"1", 0}, {"2", 1}, {"3", 2}, {"4", 3},
     {"5", 4}, {"6", 5}, {"7", 6}, {"8", 7},
     {"9", 8}, {"10", 9}, {"11", 10}, {"12", 11},
     {"13", 12}, {"14", 13}, {"15", 14}, {"16", 15},
     {"17", 16}, {"18", 17}, {"19", 18}, {"20", 19},
     {"21", 20}, {"22", 21}, {"X", 22}, {"Y", 23},
-    {"MT", 24}
+    {"MT", 24},
+    // GENCODE chromosome naming convention (i.e., chr1, ..., chrM, chrX, chrY)
+    {"chr1", 0}, {"chr2", 1}, {"chr3", 2}, {"chr4", 3},
+    {"chr5", 4}, {"chr6", 5}, {"chr7", 6}, {"chr8", 7},
+    {"chr9", 8}, {"chr10", 9}, {"chr11", 10}, {"chr12", 11},
+    {"chr13", 12}, {"chr14", 13}, {"chr15", 14}, {"chr16", 15},
+    {"chr17", 16}, {"chr18", 17}, {"chr19", 18}, {"chr20", 19},
+    {"chr21", 20}, {"chr22", 21}, {"chrX", 22}, {"chrY", 23},
+    {"chrM", 24}
 };
 
 //Map from chromosome to integer
+//Use Ensembl chromosome naming convention (i.e., 1, ..., MT, X, Y) for internal and outputdata structures
 std::map<int, string> int_to_chr = {
     {0, "1"}, {1, "2"}, {2, "3"}, {3, "4"},
     {4, "5"}, {5, "6"}, {6, "7"}, {7, "8"},
@@ -255,6 +265,9 @@ void calculate_prior_line(string sample, string line, bool fixed_sites = false) 
         }
         site_readcounts[key].total_ref_count += ref_count;
         site_readcounts[key].total_alt_count += alt_count;
+    } else {
+        // Chromosome does not follow the canonical naming conventions
+        throw std::runtime_error(std::string("ERROR: Noncanonical chromosome '") + chr + std::string("' found in readcount file. Code only handles canonical chromosomes."));
     }
 }
 
@@ -273,9 +286,6 @@ void parse_readcount_file(string sample, string gzfile, function<void(string, st
     std::getline(in, line);
 
     while(std::getline(in, line)){
-        if(line.substr(0, 3) == "chr") {
-            line = line.substr(3);
-        }
         func(sample, line, fixed_sites);
         line_count += 1;
     }
@@ -483,6 +493,9 @@ int main(int argc, char* argv[]) {
                 print_priors(cout);
                 return 0;
         }
+    } catch (const char* msg) {
+        cerr << msg << endl;
+        return 1;
     } catch (const runtime_error& e) {
         cerr << e.what() << endl;
         return 1;
