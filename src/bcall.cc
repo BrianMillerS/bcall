@@ -452,7 +452,7 @@ int main(int argc, char* argv[]) {
             }
             else if (string(argv[1]) == "prior-dump") {
                     calculate_priors();
-                    //print_priors(cout, false);
+                    print_priors(cout, false);
                     write_priors(string(argv[3]));
                     return 0;
             }
