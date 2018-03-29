@@ -1,8 +1,9 @@
 /*  bcall.cc -- main
 
-    Copyright (c) 2016, Avinash Ramu
+    Copyright (c) 2016
 
-    Author: Avinash Ramu <avinash3003@yahoo.co.in>
+    Authors: Avinash Ramu <avinash3003@yahoo.co.in>
+             Nicole Rockweiler <nrockweiler@wustl.edu>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
