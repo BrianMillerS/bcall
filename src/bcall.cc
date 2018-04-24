@@ -178,6 +178,13 @@ inline void print_significant_lines(double pval_cutoff, ostream& out = cout) {
     }
 }
 
+//Print output line
+inline void print_all_lines(ostream& out = cout) {
+    for (auto& kv : lines_pvalues) {
+        out << kv.first << endl;
+    }
+}
+
 //Takes a line of the readcount file as input and applies
 //the binomial test, the `p` is calculated using all the
 //readcounts at this site across samples
@@ -186,6 +193,8 @@ void apply_model_readcount_line(string sample, string line, bool fixed_sites = f
     string chr, ref;
     uint32_t pos, depth, ref_count, all_alt_count, alt_count,
              acount, ccount, gcount, tcount;
+
+	// Note: ncount, indelcount, and identifier columns are not used
     ss >> chr >> pos >> depth >> ref >> ref_count;
     //Get counts for specific nucleotides
     ss >> all_alt_count >> acount >> ccount >> gcount >> tcount;
@@ -272,9 +281,10 @@ void calculate_prior_line(string sample, string line, bool fixed_sites = false) 
 }
 
 //iterate through readcount file - And apply model to each line
-//first arg is name of the gz file
-//second argument is the function to apply to each line of the file
-//The third argument specifies if we should look only at fixed sites of interest(passed as a param)
+//first argument is sample name
+//second argument is the name of the gz file
+//third argument is the function to apply to each line of the file
+//fourth argument specifies if we should look only at fixed sites of interest(passed as a param)
 void parse_readcount_file(string sample, string gzfile, function<void(string, string, bool)> func,
                           bool fixed_sites = false) {
     igzstream in(gzfile.c_str());
@@ -306,6 +316,8 @@ void calculate_priors(bool fixed_sites = false) {
 
 //Iterate through each sample's readcounts and call
 void apply_model() {
+	bool header_not_printed = true;
+
     for (auto& kv : sample_to_readcountfile) {
         cerr << endl << "Applying model to " << kv.first << endl;
         not_in_map = 0; //Global variable - BAD
@@ -313,12 +325,16 @@ void apply_model() {
         lines_pvalues.clear(); //Remove all lines and p-values from previous sample
         parse_readcount_file(kv.first, kv.second, apply_model_readcount_line);
         cerr << "The number of tests performed for this sample is: " << pvalues.size() << endl;
-        cerr << "Applying the BH-procedure to control FDR." << endl;
-        double pvalue_cutoff = bh_fdr(pvalues, 0.05); //FDR
-        cerr << "The p-value cutoff is:" << pvalue_cutoff << endl;
-        cerr << "The number of sites not in the region of interest is " << not_in_map;
-        print_header();
-        print_significant_lines(pvalue_cutoff);
+        cerr << "No multiple testing correction was applied.  Raw p-values <= 0.05 will be reported." << endl;
+        cerr << "The number of sites not in the region of interest is: " << not_in_map << endl;
+
+        // Only print header for first sample
+		if (header_not_printed) {
+            print_header();
+			header_not_printed = false;
+		}
+
+        print_all_lines();
     }
 }
 
