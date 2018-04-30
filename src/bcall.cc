@@ -29,7 +29,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include <map>
 #include <sstream>
 #include "cereal/types/unordered_map.hpp"
-#include "cereal/types/string.hpp"
 #include "cereal/types/memory.hpp"
 #include "cereal/archives/binary.hpp"
 #include "gzstream/gzstream.h"
@@ -38,6 +37,10 @@ DEALINGS IN THE SOFTWARE.  */
 #include "Rmath.h"
 
 using namespace std;
+
+// Key is chrom, value is integer representation of chromosome (simple 0, 1, 2 based on the order of when the chrom was first seen
+std::map<string, uint32_t> chr_to_int_map;
+std::map<uint32_t, string> int_to_chr_map;
 
 //key is sampleID, value is path to readcount.gz file
 std::unordered_map<string, string> sample_to_readcountfile;
@@ -52,8 +55,8 @@ struct readcounts {
     }
 };
 
-//key is <chr>:<pos>, value is struct readcounts
-std::unordered_map<string, readcounts> site_readcounts;
+//key is pos << 32 | chr_int, value is struct readcounts
+std::unordered_map<uint64_t, readcounts> site_readcounts;
 //vector of p-values for a sample, apply FDR adjustment to these
 std::vector<double> pvalues;
 //Map of line => binomial_test_pval
@@ -84,25 +87,45 @@ int usage() {
     return 0;
 }
 
-//Split a key into constituent chr and pos
-pair<string, uint32_t> decode_key(string key) {
-	
-	// key is stored as <chr>:<pos>
-	size_t delimiter_index = key.find(":");
-	
-	if (delimiter_index == string::npos) {
-        throw runtime_error("Unable to decode key " + key);
+//Convert chr to integer
+uint32_t chr_to_int(string chr) {
+    // Add the chrom to chr_to_int if this the first time it's been seen; else look it up
+	uint32_t chr_int;
+	if (chr_to_int_map.find(chr) == chr_to_int_map.end()) {
+		if (! chr_to_int_map.empty()) {
+			uint32_t last_int = (--chr_to_int_map.rbegin())->second;
+            chr_int = last_int + 1;
+		} else {
+            chr_int = 0;
+		}
+		chr_to_int_map[chr] = chr_int;
+		int_to_chr_map[chr_int] = chr;
+	} else {
+        chr_int = chr_to_int_map[chr];
 	}
 
-	string chr = key.substr(0, delimiter_index);
-	uint32_t pos = std::stoi(key.substr(delimiter_index + 1, string::npos));
+	return chr_int;
+}
 
+//Split a key into constituent chr and pos
+pair<string, uint32_t> decode_key(uint64_t key) {
+    int chr_index = static_cast<uint32_t>(key);
+    if(chr_index < 0 || chr_index > 24) {
+        throw runtime_error("Unable to decode key " + to_string(key));
+    }
+    //left most 32 bits
+    string chr = int_to_chr_map[chr_index];
+    //Right most 32 bits
+    uint32_t pos = static_cast<uint32_t>(key >> 32);
     return std::make_pair(chr, pos);
 }
 
-// key format: <chr>:<pos>
-string create_key(string chr, uint64_t pos) {
-    string unique_key = chr + ":" + std::to_string(pos);
+//Create a key that is of type double
+//The key is unique for a chr:pos combination
+//Left shift the position, AND the chr bits
+uint64_t create_key(string chr, uint64_t pos) {
+    uint32_t chr_int = chr_to_int(chr);
+    uint64_t unique_key = (uint64_t) (pos << 32) | chr_int;
     return unique_key;
 }
 
@@ -174,7 +197,8 @@ void apply_model_readcount_line(string sample, string line, bool fixed_sites = f
         default://Don't call at this position for N etc
             return;
     }
-    string key = create_key(chr, pos);
+
+	uint64_t key = create_key(chr, pos);
     if(site_readcounts.find(key) == site_readcounts.end()) {
         //throw runtime_error("Unable to find chr/pos " + chr + " " + to_string(pos));
         //Not in the merged-map
@@ -218,7 +242,7 @@ void calculate_prior_line(string sample, string line, bool fixed_sites = false) 
     ss >> chr >> pos >> depth >> ref;
     ss >> ref_count >> alt_count;
 
-    string key = create_key(chr, pos);
+    uint64_t key = create_key(chr, pos);
     if(site_readcounts.find(key) == site_readcounts.end()) {
         //Sites are fixed by the BED file, don't add new sites
         if (fixed_sites) {
@@ -355,7 +379,7 @@ void read_priors() {
                                 " for reading priors.");
         }
         cereal::BinaryInputArchive archive(fin);
-        std::unordered_map<string, readcounts> temp_site_readcounts;
+        std::unordered_map<uint64_t, readcounts> temp_site_readcounts;
         archive(temp_site_readcounts);
         //Aggregate temp with main
         for (auto& kv : temp_site_readcounts) {
@@ -397,7 +421,7 @@ void add_bedline_to_map(string line) {
         return;
     }
     for (uint32_t pos = start + 1; pos <= end; pos++) {
-        string key = create_key(chr, pos);
+        uint64_t key = create_key(chr, pos);
         //Initialize total_ref and total_alt to zero
         site_readcounts[key] = {0, 0};
     }
