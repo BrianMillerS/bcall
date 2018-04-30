@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <map>
 #include <sstream>
 #include "cereal/types/unordered_map.hpp"
+#include "cereal/types/string.hpp"
 #include "cereal/types/memory.hpp"
 #include "cereal/archives/binary.hpp"
 #include "gzstream/gzstream.h"
@@ -37,38 +38,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include "Rmath.h"
 
 using namespace std;
-
-//Map from chromosome to integer
-std::map<string, int> chr_to_int = {
-    // Ensembl chromosome naming convention (i.e., 1, ..., MT, X, Y)
-    {"1", 0}, {"2", 1}, {"3", 2}, {"4", 3},
-    {"5", 4}, {"6", 5}, {"7", 6}, {"8", 7},
-    {"9", 8}, {"10", 9}, {"11", 10}, {"12", 11},
-    {"13", 12}, {"14", 13}, {"15", 14}, {"16", 15},
-    {"17", 16}, {"18", 17}, {"19", 18}, {"20", 19},
-    {"21", 20}, {"22", 21}, {"X", 22}, {"Y", 23},
-    {"MT", 24},
-    // GENCODE chromosome naming convention (i.e., chr1, ..., chrM, chrX, chrY)
-    {"chr1", 0}, {"chr2", 1}, {"chr3", 2}, {"chr4", 3},
-    {"chr5", 4}, {"chr6", 5}, {"chr7", 6}, {"chr8", 7},
-    {"chr9", 8}, {"chr10", 9}, {"chr11", 10}, {"chr12", 11},
-    {"chr13", 12}, {"chr14", 13}, {"chr15", 14}, {"chr16", 15},
-    {"chr17", 16}, {"chr18", 17}, {"chr19", 18}, {"chr20", 19},
-    {"chr21", 20}, {"chr22", 21}, {"chrX", 22}, {"chrY", 23},
-    {"chrM", 24}
-};
-
-//Map from chromosome to integer
-//Use Ensembl chromosome naming convention (i.e., 1, ..., MT, X, Y) for internal and outputdata structures
-std::map<int, string> int_to_chr = {
-    {0, "1"}, {1, "2"}, {2, "3"}, {3, "4"},
-    {4, "5"}, {5, "6"}, {6, "7"}, {7, "8"},
-    {8, "9"}, {9, "10"}, {10, "11"}, {11, "12"},
-    {12, "13"}, {13, "14"}, {14, "15"}, {15, "16"},
-    {16, "17"}, {17, "18"}, {18, "19"}, {19, "20"},
-    {20, "21"}, {21, "22"}, {22, "X"}, {23, "Y"},
-    {24, "MT"}
-};
 
 //key is sampleID, value is path to readcount.gz file
 std::unordered_map<string, string> sample_to_readcountfile;
@@ -83,8 +52,8 @@ struct readcounts {
     }
 };
 
-//key is pos << 5 | chr_int, value is struct readcounts
-std::unordered_map<uint64_t, readcounts> site_readcounts;
+//key is <chr>:<pos>, value is struct readcounts
+std::unordered_map<string, readcounts> site_readcounts;
 //vector of p-values for a sample, apply FDR adjustment to these
 std::vector<double> pvalues;
 //Map of line => binomial_test_pval
@@ -116,33 +85,24 @@ int usage() {
 }
 
 //Split a key into constituent chr and pos
-pair<string, uint32_t> decode_key(uint64_t key) {
-    int chr_index = static_cast<uint32_t>(key);
-    if(chr_index < 0 || chr_index > 24) {
-        throw runtime_error("Unable to decode key " + to_string(key));
-    }
-    //left most 32 bits
-    string chr = int_to_chr[chr_index];
-    //Right most 32 bits
-    uint32_t pos = static_cast<uint32_t>(key >> 32);
+pair<string, uint32_t> decode_key(string key) {
+	
+	// key is stored as <chr>:<pos>
+	size_t delimiter_index = key.find(":");
+	
+	if (delimiter_index == string::npos) {
+        throw runtime_error("Unable to decode key " + key);
+	}
+
+	string chr = key.substr(0, delimiter_index);
+	uint32_t pos = std::stoi(key.substr(delimiter_index + 1, string::npos));
+
     return std::make_pair(chr, pos);
 }
 
-//Create a key that is of type double
-//The key is unique for a chr:pos combination
-//Left shift the position, AND the chr bits
-uint64_t create_key(string chr, uint64_t pos) {
-    uint32_t chr_int = chr_to_int[chr];
-    /* //see binary encoding
-    bitset<5> x(chr_int);
-    cerr << "chr_x is " << x << endl;
-    bitset<32> pos_x(pos);
-    cerr << "pos_x is " << pos_x << endl;
-    cerr << "unique key is " << unique_key << endl;
-    bitset<64> key_x(unique_key);
-    cerr << "key_x is " << key_x << endl;
-    */
-    uint64_t unique_key = (uint64_t) (pos << 32) | chr_int;
+// key format: <chr>:<pos>
+string create_key(string chr, uint64_t pos) {
+    string unique_key = chr + ":" + std::to_string(pos);
     return unique_key;
 }
 
@@ -214,41 +174,39 @@ void apply_model_readcount_line(string sample, string line, bool fixed_sites = f
         default://Don't call at this position for N etc
             return;
     }
-    if(chr_to_int.find(chr) != chr_to_int.end()) {
-        uint64_t key = create_key(chr, pos);
-        if(site_readcounts.find(key) == site_readcounts.end()) {
-            //throw runtime_error("Unable to find chr/pos " + chr + " " + to_string(pos));
-            //Not in the merged-map
-            //cerr << "not in map" << endl;
-            not_in_map++;
-            return;
+    string key = create_key(chr, pos);
+    if(site_readcounts.find(key) == site_readcounts.end()) {
+        //throw runtime_error("Unable to find chr/pos " + chr + " " + to_string(pos));
+        //Not in the merged-map
+        //cerr << "not in map" << endl;
+        not_in_map++;
+        return;
+    }
+    //Subtract this sample's counts from the prior
+    uint64_t total_alt_count = site_readcounts[key].total_alt_count - all_alt_count;
+    uint64_t total_ref_count = site_readcounts[key].total_ref_count - ref_count;
+    uint64_t total_rc =
+        site_readcounts[key].total_ref_count + site_readcounts[key].total_alt_count - ref_count - all_alt_count;
+    double prior_p =
+        (double)total_alt_count / (double) total_rc;
+    if (prior_p == 0) { //Set lower bound on the sequencing error rate
+        prior_p = 0.001;
+    }
+    //This should help with pulling out from tabix
+    string region = chr + ":" + common::num_to_str(pos);
+    if (alt_count >= 2) { //only look at sites with 2 or more variant supporting reads
+        // Test if alt coverage is higher than expected given background error rate
+        double p_value = 1 - pbinom(alt_count - 1, ref_count + alt_count, prior_p, true, false);
+        pvalues.push_back(p_value);
+        if (p_value <= 0.05) { //Only store lines <= 0.05, these will be further filtered out while printing
+            line = line + "\t" +
+                   common::num_to_str(total_ref_count) + "\t" + common::num_to_str(total_alt_count) +
+                   "\t" + region + "\t" + common::num_to_str(p_value) + "\t" + sample;
+            //Store the line with its pvalue in the map
+            lines_pvalues[line] = p_value;
         }
-        //Subtract this sample's counts from the prior
-        uint64_t total_alt_count = site_readcounts[key].total_alt_count - all_alt_count;
-        uint64_t total_ref_count = site_readcounts[key].total_ref_count - ref_count;
-        uint64_t total_rc =
-            site_readcounts[key].total_ref_count + site_readcounts[key].total_alt_count - ref_count - all_alt_count;
-        double prior_p =
-            (double)total_alt_count / (double) total_rc;
-        if (prior_p == 0) { //Set lower bound on the sequencing error rate
-            prior_p = 0.001;
-        }
-        //This should help with pulling out from tabix
-        string region = chr + ":" + common::num_to_str(pos);
-        if (alt_count >= 2) { //only look at sites with 2 or more variant supporting reads
-            // Test if alt coverage is higher than expected given background error rate
-            double p_value = 1 - pbinom(alt_count - 1, ref_count + alt_count, prior_p, true, false);
-            pvalues.push_back(p_value);
-            if (p_value <= 0.05) { //Only store lines <= 0.05, these will be further filtered out while printing
-                line = line + "\t" +
-                       common::num_to_str(total_ref_count) + "\t" + common::num_to_str(total_alt_count) +
-                       "\t" + region + "\t" + common::num_to_str(p_value) + "\t" + sample;
-                //Store the line with its pvalue in the map
-                lines_pvalues[line] = p_value;
-            }
-        } else {
-            //cerr << "not greater than 2 variant reads" << endl;
-        }
+    } else {
+        //cerr << "not greater than 2 variant reads" << endl;
     }
 }
 
@@ -259,25 +217,21 @@ void calculate_prior_line(string sample, string line, bool fixed_sites = false) 
     uint32_t pos, depth, ref_count, alt_count;
     ss >> chr >> pos >> depth >> ref;
     ss >> ref_count >> alt_count;
-    if(chr_to_int.find(chr) != chr_to_int.end()) {
-        uint64_t key = create_key(chr, pos);
-        if(site_readcounts.find(key) == site_readcounts.end()) {
-            //Sites are fixed by the BED file, don't add new sites
-            if (fixed_sites) {
-                return;
-            }
-            //if (alt_count == 0) { //Experimental - only look at sites with Non-zero alt
-            //    return;
-            //}
-            site_readcounts[key].total_ref_count = 0;
-            site_readcounts[key].total_alt_count = 0;
+
+    string key = create_key(chr, pos);
+    if(site_readcounts.find(key) == site_readcounts.end()) {
+        //Sites are fixed by the BED file, don't add new sites
+        if (fixed_sites) {
+            return;
         }
-        site_readcounts[key].total_ref_count += ref_count;
-        site_readcounts[key].total_alt_count += alt_count;
-    } else {
-        // Chromosome does not follow the canonical naming conventions
-        throw std::runtime_error(std::string("ERROR: Noncanonical chromosome '") + chr + std::string("' found in readcount file. Code only handles canonical chromosomes."));
+        //if (alt_count == 0) { //Experimental - only look at sites with Non-zero alt
+        //    return;
+        //}
+        site_readcounts[key].total_ref_count = 0;
+        site_readcounts[key].total_alt_count = 0;
     }
+    site_readcounts[key].total_ref_count += ref_count;
+    site_readcounts[key].total_alt_count += alt_count;
 }
 
 //iterate through readcount file - And apply model to each line
@@ -401,7 +355,7 @@ void read_priors() {
                                 " for reading priors.");
         }
         cereal::BinaryInputArchive archive(fin);
-        std::unordered_map<uint64_t, readcounts> temp_site_readcounts;
+        std::unordered_map<string, readcounts> temp_site_readcounts;
         archive(temp_site_readcounts);
         //Aggregate temp with main
         for (auto& kv : temp_site_readcounts) {
@@ -443,7 +397,7 @@ void add_bedline_to_map(string line) {
         return;
     }
     for (uint32_t pos = start + 1; pos <= end; pos++) {
-        uint64_t key = create_key(chr, pos);
+        string key = create_key(chr, pos);
         //Initialize total_ref and total_alt to zero
         site_readcounts[key] = {0, 0};
     }
