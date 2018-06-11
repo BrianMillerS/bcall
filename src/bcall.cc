@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.  */
 #include <map>
 #include <sstream>
 #include "cereal/types/unordered_map.hpp"
+#include "cereal/types/string.hpp"
 #include "cereal/types/memory.hpp"
 #include "cereal/archives/binary.hpp"
 #include "gzstream/gzstream.h"
@@ -37,10 +38,6 @@ DEALINGS IN THE SOFTWARE.  */
 #include "Rmath.h"
 
 using namespace std;
-
-// Key is chrom, value is integer representation of chromosome (simple 0, 1, 2 based on the order of when the chrom was first seen
-std::map<string, uint32_t> chr_to_int_map;
-std::map<uint32_t, string> int_to_chr_map;
 
 //key is sampleID, value is path to readcount.gz file
 std::unordered_map<string, string> sample_to_readcountfile;
@@ -55,8 +52,8 @@ struct readcounts {
     }
 };
 
-//key is pos << 32 | chr_int, value is struct readcounts
-std::unordered_map<uint64_t, readcounts> site_readcounts;
+//key1 is chrom (string); key2 is pos; value is struct readcounts
+std::unordered_map<string, std::unordered_map<uint64_t, readcounts>> site_readcounts;
 //vector of p-values for a sample, apply FDR adjustment to these
 std::vector<double> pvalues;
 //Map of line => binomial_test_pval
@@ -87,47 +84,6 @@ int usage() {
     return 0;
 }
 
-//Convert chr to integer
-uint32_t chr_to_int(string chr) {
-    // Add the chrom to chr_to_int if this the first time it's been seen; else look it up
-	uint32_t chr_int;
-	if (chr_to_int_map.find(chr) == chr_to_int_map.end()) {
-		if (! chr_to_int_map.empty()) {
-			uint32_t last_int = (--chr_to_int_map.rbegin())->second;
-            chr_int = last_int + 1;
-		} else {
-            chr_int = 0;
-		}
-		chr_to_int_map[chr] = chr_int;
-		int_to_chr_map[chr_int] = chr;
-	} else {
-        chr_int = chr_to_int_map[chr];
-	}
-
-	return chr_int;
-}
-
-//Split a key into constituent chr and pos
-pair<string, uint32_t> decode_key(uint64_t key) {
-    int chr_index = static_cast<uint32_t>(key);
-    if(chr_index < 0 || chr_index > 24) {
-        throw runtime_error("Unable to decode key " + to_string(key));
-    }
-    //left most 32 bits
-    string chr = int_to_chr_map[chr_index];
-    //Right most 32 bits
-    uint32_t pos = static_cast<uint32_t>(key >> 32);
-    return std::make_pair(chr, pos);
-}
-
-//Create a key that is of type double
-//The key is unique for a chr:pos combination
-//Left shift the position, AND the chr bits
-uint64_t create_key(string chr, uint64_t pos) {
-    uint32_t chr_int = chr_to_int(chr);
-    uint64_t unique_key = (uint64_t) (pos << 32) | chr_int;
-    return unique_key;
-}
 
 //Print output header
 void print_header(ostream& out = cout) {
@@ -198,8 +154,7 @@ void apply_model_readcount_line(string sample, string line, bool fixed_sites = f
             return;
     }
 
-	uint64_t key = create_key(chr, pos);
-    if(site_readcounts.find(key) == site_readcounts.end()) {
+    if(site_readcounts[chr].find(pos) == site_readcounts[chr].end()) {
         //throw runtime_error("Unable to find chr/pos " + chr + " " + to_string(pos));
         //Not in the merged-map
         //cerr << "not in map" << endl;
@@ -207,10 +162,10 @@ void apply_model_readcount_line(string sample, string line, bool fixed_sites = f
         return;
     }
     //Subtract this sample's counts from the prior
-    uint64_t total_alt_count = site_readcounts[key].total_alt_count - all_alt_count;
-    uint64_t total_ref_count = site_readcounts[key].total_ref_count - ref_count;
+    uint64_t total_alt_count = site_readcounts[chr][pos].total_alt_count - all_alt_count;
+    uint64_t total_ref_count = site_readcounts[chr][pos].total_ref_count - ref_count;
     uint64_t total_rc =
-        site_readcounts[key].total_ref_count + site_readcounts[key].total_alt_count - ref_count - all_alt_count;
+        site_readcounts[chr][pos].total_ref_count + site_readcounts[chr][pos].total_alt_count - ref_count - all_alt_count;
     double prior_p =
         (double)total_alt_count / (double) total_rc;
     if (prior_p == 0) { //Set lower bound on the sequencing error rate
@@ -242,8 +197,7 @@ void calculate_prior_line(string sample, string line, bool fixed_sites = false) 
     ss >> chr >> pos >> depth >> ref;
     ss >> ref_count >> alt_count;
 
-    uint64_t key = create_key(chr, pos);
-    if(site_readcounts.find(key) == site_readcounts.end()) {
+    if(site_readcounts[chr].find(pos) == site_readcounts[chr].end()) {
         //Sites are fixed by the BED file, don't add new sites
         if (fixed_sites) {
             return;
@@ -251,11 +205,11 @@ void calculate_prior_line(string sample, string line, bool fixed_sites = false) 
         //if (alt_count == 0) { //Experimental - only look at sites with Non-zero alt
         //    return;
         //}
-        site_readcounts[key].total_ref_count = 0;
-        site_readcounts[key].total_alt_count = 0;
+        site_readcounts[chr][pos].total_ref_count = 0;
+        site_readcounts[chr][pos].total_alt_count = 0;
     }
-    site_readcounts[key].total_ref_count += ref_count;
-    site_readcounts[key].total_alt_count += alt_count;
+    site_readcounts[chr][pos].total_ref_count += ref_count;
+    site_readcounts[chr][pos].total_alt_count += alt_count;
 }
 
 //iterate through readcount file - And apply model to each line
@@ -288,7 +242,6 @@ void calculate_priors(bool fixed_sites = false) {
     for (auto& kv : sample_to_readcountfile) {
         cerr << "Processing " << kv.first << endl;
         parse_readcount_file(kv.first, kv.second, calculate_prior_line, fixed_sites);
-        cerr << "Size of readcount map is " << site_readcounts.size() << endl;
     }
 }
 
@@ -319,7 +272,6 @@ void apply_model() {
 //Print the header for priors for each site
 void print_priors_header(ostream& fout) {
     fout << "#chr" << "\t" << "pos" << "\t";
-    fout << "key" << "\t";
     fout << "total_ref_count" << "\t";
     fout << "total_alt_count";
     fout << endl;
@@ -328,18 +280,20 @@ void print_priors_header(ostream& fout) {
 //Print the priors for each site
 void print_priors(ostream& fout, bool print_zeros = true) {
     print_priors_header(fout);
-    for (auto& kv : site_readcounts) {
-        if(print_zeros == false &&
-           kv.second.total_ref_count == 0 &&
-           kv.second.total_alt_count == 0) {
-            continue;
-        }
-        auto decoded = decode_key(kv.first);
-        fout << decoded.first << "\t" << decoded.second << "\t";
-        fout << kv.first << "\t";
-        fout << kv.second.total_ref_count << "\t";
-        fout << kv.second.total_alt_count;
-        fout << endl;
+
+	for (auto const &chr : site_readcounts) {
+		for (auto const &pos : chr.second) {
+	        
+            if(print_zeros == false &&
+               pos.second.total_ref_count == 0 &&
+               pos.second.total_alt_count == 0) {
+                continue;
+            }
+            fout << chr.first << "\t" << pos.first << "\t";
+            fout << pos.second.total_ref_count << "\t";
+            fout << pos.second.total_alt_count;
+            fout << endl;
+		}
     }
 }
 
@@ -379,16 +333,19 @@ void read_priors() {
                                 " for reading priors.");
         }
         cereal::BinaryInputArchive archive(fin);
-        std::unordered_map<uint64_t, readcounts> temp_site_readcounts;
+        std::unordered_map<string, std::unordered_map<uint64_t, readcounts>> temp_site_readcounts;
         archive(temp_site_readcounts);
         //Aggregate temp with main
-        for (auto& kv : temp_site_readcounts) {
-            if (site_readcounts.find(kv.first) == site_readcounts.end()) {
-                site_readcounts[kv.first] = kv.second;
-            } else {
-                site_readcounts[kv.first].total_ref_count += kv.second.total_ref_count;
-                site_readcounts[kv.first].total_alt_count += kv.second.total_alt_count;
-            }
+		for (auto const &chr : temp_site_readcounts) {
+			for (auto const &pos : chr.second) {
+
+                if (site_readcounts[chr.first].find(pos.first) == site_readcounts[chr.first].end()) {
+                    site_readcounts[chr.first][pos.first] = pos.second;
+                } else {
+                    site_readcounts[chr.first][pos.first].total_ref_count += pos.second.total_ref_count;
+                    site_readcounts[chr.first][pos.first].total_alt_count += pos.second.total_alt_count;
+                }
+			}
         }
         fin.close();
     }
@@ -421,9 +378,8 @@ void add_bedline_to_map(string line) {
         return;
     }
     for (uint32_t pos = start + 1; pos <= end; pos++) {
-        uint64_t key = create_key(chr, pos);
         //Initialize total_ref and total_alt to zero
-        site_readcounts[key] = {0, 0};
+        site_readcounts[chr][pos] = {0, 0};
     }
 }
 
@@ -441,7 +397,6 @@ void initialize_fixed_map(string bedFile) {
         throw runtime_error("Bedfile empty - " + bedFile);
     }
     cerr << "Read " << line_count << " lines from " << bedFile << endl;
-    cerr << "Size of readcount map is " << site_readcounts.size() << endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -450,7 +405,7 @@ int main(int argc, char* argv[]) {
             read_samples(argv[2]);
             if (string(argv[1]) == "prior-and-call") {
                     calculate_priors();
-                    //print_priors(cout);
+                    //print_priors(cout, false);
                     print_header();
                     apply_model();
                     return 0;
@@ -471,7 +426,7 @@ int main(int argc, char* argv[]) {
             else if (string(argv[1]) == "prior-merge") {
                 read_samples(argv[2]);
                 read_priors();
-                print_priors(cout);
+                print_priors(cout, false);
                 write_priors(string(argv[3]));
                 return 0;
             }
@@ -484,7 +439,7 @@ int main(int argc, char* argv[]) {
         }
         else if (argc == 3 && string(argv[1]) == "prior-print") {
                 read_priors_merged(argv[2]);
-                print_priors(cout);
+                print_priors(cout, false);
                 return 0;
         }
     } catch (const char* msg) {
