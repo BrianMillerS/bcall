@@ -99,11 +99,12 @@ void print_header(ostream& out = cout) {
         << "tcount" << "\t"
         << "ncount" << "\t"
         << "indelcount" << "\t"
+        << "sample" << "\t"
         << "site_total_ref_count" << "\t"
         << "site_total_alt_count" << "\t"
         << "region" << "\t"
-        << "p_value" << "\t"
-        << "sample"
+        << "p_value"
+
         << endl;
 }
 
@@ -133,7 +134,7 @@ void apply_model_readcount_line(string sample, string line, bool fixed_sites = f
     uint32_t pos, depth, ref_count, all_alt_count, alt_count,
              acount, ccount, gcount, tcount;
 
-	// Note: ncount, indelcount, and identifier columns are not used
+    // Note: ncount, indelcount, and identifier columns are not used
     ss >> chr >> pos >> depth >> ref >> ref_count;
     //Get counts for specific nucleotides
     ss >> all_alt_count >> acount >> ccount >> gcount >> tcount;
@@ -180,7 +181,7 @@ void apply_model_readcount_line(string sample, string line, bool fixed_sites = f
         if (p_value <= 0.05) { //Only store lines <= 0.05, these will be further filtered out while printing
             line = line + "\t" +
                    common::num_to_str(total_ref_count) + "\t" + common::num_to_str(total_alt_count) +
-                   "\t" + region + "\t" + common::num_to_str(p_value) + "\t" + sample;
+                   "\t" + region + "\t" + common::num_to_str(p_value);
             //Store the line with its pvalue in the map
             lines_pvalues[line] = p_value;
         }
@@ -247,7 +248,7 @@ void calculate_priors(bool fixed_sites = false) {
 
 //Iterate through each sample's readcounts and call
 void apply_model() {
-	bool header_not_printed = true;
+    bool header_not_printed = true;
 
     for (auto& kv : sample_to_readcountfile) {
         cerr << endl << "Applying model to " << kv.first << endl;
@@ -260,10 +261,10 @@ void apply_model() {
         cerr << "The number of sites not in the region of interest is: " << not_in_map << endl;
 
         // Only print header for first sample
-		if (header_not_printed) {
+        if (header_not_printed) {
             print_header();
-			header_not_printed = false;
-		}
+            header_not_printed = false;
+        }
 
         print_all_lines();
     }
