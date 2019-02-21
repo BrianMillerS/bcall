@@ -282,9 +282,9 @@ void print_priors_header(ostream& fout) {
 void print_priors(ostream& fout, bool print_zeros = true) {
     print_priors_header(fout);
 
-	for (auto const &chr : site_readcounts) {
-		for (auto const &pos : chr.second) {
-	        
+    for (auto const &chr : site_readcounts) {
+        for (auto const &pos : chr.second) {
+            
             if(print_zeros == false &&
                pos.second.total_ref_count == 0 &&
                pos.second.total_alt_count == 0) {
@@ -294,7 +294,7 @@ void print_priors(ostream& fout, bool print_zeros = true) {
             fout << pos.second.total_ref_count << "\t";
             fout << pos.second.total_alt_count;
             fout << endl;
-		}
+        }
     }
 }
 
@@ -337,8 +337,8 @@ void read_priors() {
         std::unordered_map<string, std::unordered_map<uint64_t, readcounts>> temp_site_readcounts;
         archive(temp_site_readcounts);
         //Aggregate temp with main
-		for (auto const &chr : temp_site_readcounts) {
-			for (auto const &pos : chr.second) {
+        for (auto const &chr : temp_site_readcounts) {
+            for (auto const &pos : chr.second) {
 
                 if (site_readcounts[chr.first].find(pos.first) == site_readcounts[chr.first].end()) {
                     site_readcounts[chr.first][pos.first] = pos.second;
@@ -346,7 +346,7 @@ void read_priors() {
                     site_readcounts[chr.first][pos.first].total_ref_count += pos.second.total_ref_count;
                     site_readcounts[chr.first][pos.first].total_alt_count += pos.second.total_alt_count;
                 }
-			}
+            }
         }
         fin.close();
     }
