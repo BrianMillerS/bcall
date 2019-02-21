@@ -88,17 +88,28 @@ int usage() {
 //Print output header
 void print_header(ostream& out = cout) {
     out << "chr" << "\t"
-        << "pos" << "\t"
-        << "depth" << "\t"
-        << "ref_base" << "\t"
-        << "refcount" << "\t"
-        << "altcount" << "\t"
-        << "acount" << "\t"
-        << "ccount" << "\t"
-        << "gcount" << "\t"
-        << "tcount" << "\t"
-        << "ncount" << "\t"
-        << "indelcount" << "\t"
+        << "start" << "\t"
+        << "end" << "\t"
+        << "ref_allele" << "\t"
+        << "alt_allele" << "\t"
+        << "ref_count" << "\t"
+        << "alt_count" << "\t"
+        << "alt_pos_count" << "\t"
+        << "alt_neg_count" << "\t"
+        << "alt_on_both_strands" << "\t"
+        << "max_alt_pos" << "\t"
+        << "avg_alt_pos" << "\t"
+        << "std_alt_pos" << "\t"
+        << "A_count" << "\t"
+        << "a_count" << "\t"
+        << "C_count" << "\t"
+        << "c_count" << "\t"
+        << "G_count" << "\t"
+        << "g_count" << "\t"
+        << "T_count" << "\t"
+        << "t_count" << "\t"
+        << "N_count" << "\t"
+        << "n_count" << "\t"
         << "sample" << "\t"
         << "site_total_ref_count" << "\t"
         << "site_total_alt_count" << "\t"
@@ -235,7 +246,7 @@ void calculate_priors(bool fixed_sites = false) {
 
 //Iterate through each sample's readcounts and call
 void apply_model() {
-    bool header_not_printed = true;
+    print_header();
 
     for (auto& kv : sample_to_readcountfile) {
         cerr << endl << "Applying model to " << kv.first << endl;
@@ -246,12 +257,6 @@ void apply_model() {
         cerr << "The number of tests performed for this sample is: " << pvalues.size() << endl;
         cerr << "No multiple testing correction was applied.  Raw p-values <= 0.05 will be reported." << endl;
         cerr << "The number of sites not in the region of interest is: " << not_in_map << endl;
-
-        // Only print header for first sample
-        if (header_not_printed) {
-            print_header();
-            header_not_printed = false;
-        }
 
         print_all_lines();
     }
