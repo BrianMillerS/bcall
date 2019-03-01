@@ -405,21 +405,18 @@ int main(int argc, char* argv[]) {
             }
             else if (string(argv[1]) == "prior-dump") {
                     calculate_priors();
-                    print_priors(cout, false);
                     write_priors(string(argv[3]));
                     return 0;
             }
             else if (argc > 4 && string(argv[1]) == "prior-dump-fixed") { //prior dump on fixed sites
                     initialize_fixed_map(string(argv[4]));
                     calculate_priors(true);
-                    print_priors(cout, false);
                     write_priors(string(argv[3]));
                     return 0;
             }
             else if (string(argv[1]) == "prior-merge") {
                 read_samples(argv[2]);
                 read_priors();
-                print_priors(cout, false);
                 write_priors(string(argv[3]));
                 return 0;
             }
