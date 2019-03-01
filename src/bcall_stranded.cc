@@ -274,8 +274,8 @@ void print_priors_header(ostream& fout) {
 void print_priors(ostream& fout, bool print_zeros = true) {
     print_priors_header(fout);
 
-    for (auto const &chr : site_readcounts) {
-        for (auto const &pos : chr.second) {
+    for (auto &chr : site_readcounts) {
+        for (auto &pos : chr.second) {
             
             if(print_zeros == false &&
                pos.second.total_ref_count == 0 &&
