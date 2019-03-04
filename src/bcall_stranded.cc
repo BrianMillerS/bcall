@@ -187,6 +187,25 @@ void apply_model_readcount_line(string sample, string line, bool fixed_sites = f
 
 //parse a line from the stranded readcount file
 void calculate_prior_line(string sample, string line, bool fixed_sites = false) {
+    // Check format
+    // For now, will just check # of columns is correct
+    stringstream ss_format(line);
+    int num_cols = 0;
+    int EXPECTED_NUM_COLS = 24;
+    do {
+        string tmp;
+        ss_format >> tmp;
+        if (tmp.length()) {
+            ++num_cols;
+        }
+    } while(ss_format);
+
+    if (num_cols != EXPECTED_NUM_COLS) {
+       cerr << "ERROR: the following line " << endl << line << endl << "did not have the correct number of columns (" << EXPECTED_NUM_COLS << ").  It had " << num_cols << " columns."<< endl;
+       exit(1); 
+    }
+
+    // Parse contents
     stringstream ss(line);
     string chr, ref, alt, max_alt_pos, avg_alt_pos, std_alt_pos;
     uint32_t start, end, ref_count, alt_count, alt_pos_count, alt_neg_count, alt_on_both_strands, A_count, a_count, C_count, c_count, G_count, g_count, T_count, t_count;
